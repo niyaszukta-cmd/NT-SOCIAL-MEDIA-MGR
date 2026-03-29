@@ -3,7 +3,7 @@ import os
 import json
 import base64
 from datetime import datetime
-from groq import Groq
+from openai import OpenAI
 
 # ── Page config ──────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -16,10 +16,7 @@ st.set_page_config(
 # ── Custom CSS ────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-    /* Main container */
     .main .block-container { padding-top: 1.5rem; padding-bottom: 2rem; max-width: 1100px; }
-
-    /* Header banner */
     .nyz-header {
         background: linear-gradient(135deg, #0f2744 0%, #185FA5 100%);
         border-radius: 12px;
@@ -31,17 +28,6 @@ st.markdown("""
     }
     .nyz-header h1 { color: #E6F1FB; font-size: 1.4rem; margin: 0; }
     .nyz-header p  { color: #85B7EB; font-size: 0.85rem; margin: 0; }
-
-    /* Section cards */
-    .section-card {
-        background: #1a1a2e;
-        border: 1px solid #2a2a4a;
-        border-radius: 10px;
-        padding: 1.2rem;
-        margin-bottom: 1rem;
-    }
-
-    /* Tag pills */
     .tag-pill {
         display: inline-block;
         padding: 4px 12px;
@@ -53,8 +39,6 @@ st.markdown("""
     .tag-high { background: #0c447c22; color: #85B7EB; border: 1px solid #185FA5; }
     .tag-med  { background: #41240222; color: #EF9F27; border: 1px solid #BA7517; }
     .tag-low  { background: #2a2a3a;   color: #888780; border: 1px solid #444441; }
-
-    /* Title cards */
     .title-card {
         background: #12122a;
         border: 1px solid #2a2a4a;
@@ -65,8 +49,6 @@ st.markdown("""
         justify-content: space-between;
         align-items: center;
     }
-
-    /* Score badge */
     .score-badge {
         background: #0f6e5622;
         color: #5DCAA5;
@@ -77,25 +59,10 @@ st.markdown("""
         white-space: nowrap;
         margin-left: 10px;
     }
-
-    /* Platform pill */
-    .platform-active {
-        background: #185FA5;
-        color: #E6F1FB;
-        padding: 4px 14px;
-        border-radius: 20px;
-        font-size: 12px;
-        display: inline-block;
-        margin: 2px;
-    }
-
-    /* Char counter */
     .char-count { font-size: 11px; color: #888; text-align: right; margin-top: 4px; }
-    .char-ok    { color: #5DCAA5; }
-    .char-warn  { color: #EF9F27; }
-    .char-over  { color: #E24B4A; }
-
-    /* Output section title */
+    .char-ok  { color: #5DCAA5; }
+    .char-warn{ color: #EF9F27; }
+    .char-over{ color: #E24B4A; }
     .out-label {
         font-size: 11px;
         text-transform: uppercase;
@@ -104,19 +71,6 @@ st.markdown("""
         margin-bottom: 8px;
         font-weight: 600;
     }
-
-    /* Malayalam badge */
-    .ml-badge {
-        background: #26215c22;
-        color: #AFA9EC;
-        border: 1px solid #534AB7;
-        border-radius: 6px;
-        padding: 2px 8px;
-        font-size: 11px;
-        margin-left: 8px;
-    }
-
-    /* Hide Streamlit default elements */
     #MainMenu, footer, header { visibility: hidden; }
     .stDeployButton { display: none; }
     div[data-testid="stToolbar"] { display: none; }
@@ -134,38 +88,60 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# ── Sidebar — API key ─────────────────────────────────────────────────────────
+# ── OpenRouter model lists ────────────────────────────────────────────────────
+OR_MODELS = {
+    "Llama 3.3 70B (free)":   "meta-llama/llama-3.3-70b-instruct:free",
+    "Llama 3.1 8B (free)":    "meta-llama/llama-3.1-8b-instruct:free",
+    "Gemma 3 27B (free)":     "google/gemma-3-27b-it:free",
+    "Gemma 3 12B (free)":     "google/gemma-3-12b-it:free",
+    "Mistral 7B (free)":      "mistralai/mistral-7b-instruct:free",
+    "DeepSeek R1 (free)":     "deepseek/deepseek-r1:free",
+    "Qwen 2.5 72B (free)":    "qwen/qwen-2.5-72b-instruct:free",
+}
+
+OR_VISION_MODELS = {
+    "Llama 3.2 11B Vision (free)": "meta-llama/llama-3.2-11b-vision-instruct:free",
+    "Gemma 3 27B (free)":          "google/gemma-3-27b-it:free",
+}
+
+# ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("### ⚙️ Settings")
-    groq_key = st.text_input(
-        "Groq API Key",
-        value=os.environ.get("GROQ_API_KEY", ""),
+    st.markdown("**OpenRouter API Key**")
+    or_key = st.text_input(
+        "Paste key here",
+        value=os.environ.get("OPENROUTER_API_KEY", ""),
         type="password",
-        help="Get free key at console.groq.com"
+        help="Free key at openrouter.ai",
+        label_visibility="collapsed",
     )
+    st.caption("🔗 [Get free key → openrouter.ai/keys](https://openrouter.ai/keys)")
+
     st.markdown("---")
-    st.markdown("**Model**")
-    model_choice = st.selectbox(
-        "Groq model",
-        ["llama-3.3-70b-versatile", "llama3-8b-8192", "mixtral-8x7b-32768"],
-        label_visibility="collapsed"
-    )
+    st.markdown("**Text model**")
+    model_label = st.selectbox("Text model", list(OR_MODELS.keys()), label_visibility="collapsed")
+    model_id    = OR_MODELS[model_label]
+
+    st.markdown("**Vision model** (thumbnail analysis)")
+    vision_label = st.selectbox("Vision model", list(OR_VISION_MODELS.keys()), label_visibility="collapsed")
+    vision_id    = OR_VISION_MODELS[vision_label]
+
     st.markdown("---")
     st.markdown("**Brand defaults**")
-    brand_name   = st.text_input("Channel / Brand", value="NYZTrade")
-    brand_url    = st.text_input("Website", value="nyztrade.in")
-    brand_handle = st.text_input("YouTube handle", value="@NYZTrade")
+    brand_name   = st.text_input("Channel / Brand",  value="NYZTrade")
+    brand_url    = st.text_input("Website",           value="nyztrade.in")
+    brand_handle = st.text_input("YouTube handle",   value="@NYZTrade")
+
     st.markdown("---")
-    st.markdown("**History**")
     if "history" not in st.session_state:
         st.session_state.history = []
+    st.markdown(f"**History** — {len(st.session_state.history)} generated")
     if st.session_state.history:
-        st.caption(f"{len(st.session_state.history)} generated so far")
         if st.button("🗑️ Clear history"):
             st.session_state.history = []
             st.rerun()
 
-# ── Main layout — two columns ─────────────────────────────────────────────────
+# ── Layout ────────────────────────────────────────────────────────────────────
 col_in, col_out = st.columns([1, 1], gap="large")
 
 # ════════════════════════════════════════════════
@@ -174,22 +150,18 @@ col_in, col_out = st.columns([1, 1], gap="large")
 with col_in:
     st.markdown("#### 📥 Content input")
 
-    # Thumbnail upload
     thumb_file = st.file_uploader(
         "Upload thumbnail / image (optional — AI will analyse it)",
         type=["png", "jpg", "jpeg", "webp"],
-        help="Upload your video thumbnail for AI-powered topic detection"
     )
     if thumb_file:
         st.image(thumb_file, use_column_width=True, caption="Thumbnail preview")
 
     st.markdown("---")
 
-    # Topic & details
     topic = st.text_input(
         "Video topic / keyword *",
         placeholder="e.g. Nifty GEX analysis Monday expiry prediction",
-        help="Main topic of your video"
     )
 
     col_a, col_b = st.columns(2)
@@ -230,70 +202,69 @@ with col_in:
             "Live stream",
         ])
 
-    # Platforms
     st.markdown("**Target platforms**")
-    pcol1, pcol2, pcol3, pcol4, pcol5 = st.columns(5)
-    p_yt = pcol1.checkbox("YouTube", value=True)
-    p_ig = pcol2.checkbox("Instagram", value=False)
-    p_tw = pcol3.checkbox("X/Twitter", value=False)
-    p_li = pcol4.checkbox("LinkedIn", value=False)
-    p_fb = pcol5.checkbox("Facebook", value=False)
+    pc1, pc2, pc3, pc4, pc5 = st.columns(5)
+    p_yt = pc1.checkbox("YouTube",   value=True)
+    p_ig = pc2.checkbox("Instagram", value=False)
+    p_tw = pc3.checkbox("X/Twitter", value=False)
+    p_li = pc4.checkbox("LinkedIn",  value=False)
+    p_fb = pc5.checkbox("Facebook",  value=False)
 
-    platforms = []
-    if p_yt: platforms.append("YouTube")
-    if p_ig: platforms.append("Instagram")
-    if p_tw: platforms.append("X/Twitter")
-    if p_li: platforms.append("LinkedIn")
-    if p_fb: platforms.append("Facebook")
+    platforms = [p for p, sel in [
+        ("YouTube", p_yt), ("Instagram", p_ig), ("X/Twitter", p_tw),
+        ("LinkedIn", p_li), ("Facebook", p_fb)] if sel]
 
-    # Extra context
     with st.expander("➕ Extra context (optional)"):
-        key_levels  = st.text_input("Key price levels (e.g. Nifty 24500 support)")
-        market_view = st.selectbox("Market view", ["Neutral", "Bullish", "Bearish", "Sideways/range"])
-        special_notes = st.text_area("Special notes / hooks", placeholder="e.g. Gamma blast signal triggered, must-watch before Monday open", height=80)
+        key_levels    = st.text_input("Key price levels (e.g. Nifty 24500 support)")
+        market_view   = st.selectbox("Market view", ["Neutral", "Bullish", "Bearish", "Sideways/range"])
+        special_notes = st.text_area("Special notes / hooks",
+            placeholder="e.g. Gamma blast signal triggered, must-watch before Monday open",
+            height=80)
 
-    # Generate button
     generate = st.button("🚀 Generate viral content", use_container_width=True, type="primary")
 
 
 # ════════════════════════════════════════════════
-# HELPER: build prompt
+# HELPERS
 # ════════════════════════════════════════════════
 def build_prompt(topic, niche, language, audience, content_type, platforms,
                  key_levels, market_view, special_notes,
-                 brand_name, brand_url, brand_handle, thumb_desc=""):
+                 brand_name, brand_url, brand_handle):
 
-    platform_str = ", ".join(platforms) if platforms else "YouTube"
-    lang_instruction = {
+    lang_map = {
         "English": "All output must be in English.",
-        "Malayalam (മലയാളം)": "All titles, tags, and descriptions must be in Malayalam script (not transliteration). Use natural trading Malayalam as spoken by Kerala retail traders.",
-        "Both English + Malayalam": "Provide each section in BOTH English AND Malayalam. Label them clearly.",
-    }.get(language, "All output in English.")
+        "Malayalam (മലയാളം)": (
+            "All titles, tags, and descriptions must be in Malayalam script "
+            "(not transliteration). Use natural trading Malayalam."
+        ),
+        "Both English + Malayalam": (
+            "Provide each section in BOTH English AND Malayalam. Label clearly."
+        ),
+    }
+    lang_instruction = lang_map.get(language, "All output in English.")
+    platform_str = ", ".join(platforms) if platforms else "YouTube"
 
-    thumb_part = f"\nThumbnail description from image: {thumb_desc}" if thumb_desc else ""
-
-    return f"""You are a viral YouTube SEO expert specialising in Indian stock market / trading content for the channel {brand_name} ({brand_handle}).
+    return f"""You are a viral YouTube SEO expert for Indian stock market content — channel {brand_name} ({brand_handle}).
 
 {lang_instruction}
 
-CONTENT DETAILS:
-- Topic: {topic}
-- Niche: {niche}
-- Audience: {audience}
-- Content type: {content_type}
-- Platforms: {platform_str}
-- Market view: {market_view}
-- Key levels: {key_levels if key_levels else 'not specified'}
-- Special notes: {special_notes if special_notes else 'none'}
-{thumb_part}
+DETAILS:
+Topic: {topic}
+Niche: {niche}
+Audience: {audience}
+Content type: {content_type}
+Platforms: {platform_str}
+Market view: {market_view}
+Key levels: {key_levels or 'not specified'}
+Special notes: {special_notes or 'none'}
 
-Generate the following in valid JSON format (no markdown code blocks, just raw JSON):
+Return ONLY valid raw JSON — no markdown fences, no explanation:
 
 {{
   "titles": [
-    {{"title": "...", "viral_score": 95, "reason": "why this works"}},
-    {{"title": "...", "viral_score": 90, "reason": "why this works"}},
-    {{"title": "...", "viral_score": 85, "reason": "why this works"}}
+    {{"title": "...", "viral_score": 95, "reason": "..."}},
+    {{"title": "...", "viral_score": 90, "reason": "..."}},
+    {{"title": "...", "viral_score": 85, "reason": "..."}}
   ],
   "tags": [
     {{"tag": "...", "volume": "high"}},
@@ -303,80 +274,74 @@ Generate the following in valid JSON format (no markdown code blocks, just raw J
     {{"tag": "...", "volume": "medium"}},
     {{"tag": "...", "volume": "low"}}
   ],
-  "tags_string": "comma separated tags string under 500 characters for YouTube",
-  "description": "full YouTube description with emojis, sections, CTAs, disclaimer. Include {brand_url} and {brand_handle}. 400-600 words.",
-  "short_description": "2-3 sentence short description for Instagram/Twitter/LinkedIn under 150 characters",
-  "hashtags": ["#tag1", "#tag2", "#tag3", "#tag4", "#tag5", "#tag6", "#tag7", "#tag8", "#tag9", "#tag10"],
-  "hook_ideas": [
-    "Opening hook line 1 for the video",
-    "Opening hook line 2 for the video"
-  ],
-  "thumbnail_text_suggestions": ["text overlay idea 1", "text overlay idea 2", "text overlay idea 3"]
+  "tags_string": "comma separated YouTube tags under 500 chars",
+  "description": "full YouTube description 400-600 words with emojis, sections, CTA, disclaimer, include {brand_url} and {brand_handle}",
+  "short_description": "short Instagram/Twitter description under 150 chars",
+  "hashtags": ["#tag1","#tag2","#tag3","#tag4","#tag5","#tag6","#tag7","#tag8","#tag9","#tag10"],
+  "hook_ideas": ["hook 1", "hook 2"],
+  "thumbnail_text_suggestions": ["overlay 1", "overlay 2", "overlay 3"]
 }}
 
-Ensure:
-- Titles are click-bait but accurate, use numbers/power words, include Nifty/BankNifty/GEX keywords
-- Tags list: minimum 15 tags, high-volume first, mix of exact match and broad
-- Tags string must be under 500 characters
-- Description has clear sections: intro, what's covered (bullet list), CTA, disclaimer
-- Hashtags are relevant to Indian trading community
-- All content feels authentic for a Malayalam trading educator
+Rules: 15+ tags minimum, high-volume first, tags_string under 500 chars.
 """
 
 
-# ════════════════════════════════════════════════
-# HELPER: encode image for vision
-# ════════════════════════════════════════════════
-def encode_image(uploaded_file):
-    if uploaded_file is None:
-        return None
-    bytes_data = uploaded_file.getvalue()
-    return base64.b64encode(bytes_data).decode("utf-8")
+def encode_image(f):
+    return base64.b64encode(f.getvalue()).decode("utf-8") if f else None
 
 
-# ════════════════════════════════════════════════
-# HELPER: call Groq
-# ════════════════════════════════════════════════
-def call_groq(prompt, api_key, model, image_b64=None, image_type="image/jpeg"):
-    client = Groq(api_key=api_key)
+def call_openrouter(prompt, api_key, model_id, vision_id, image_b64=None, image_type="image/jpeg"):
+    client = OpenAI(
+        api_key=api_key,
+        base_url="https://openrouter.ai/api/v1",
+        default_headers={
+            "HTTP-Referer": "https://nyztrade.in",
+            "X-Title": "NYZTrade Viral Content Generator",
+        },
+    )
 
-    # Vision call to describe thumbnail first (Groq vision with llava if image provided)
+    # Vision: describe thumbnail
     thumb_desc = ""
     if image_b64:
         try:
-            vision_resp = client.chat.completions.create(
-                model="meta-llama/llama-4-scout-17b-16e-instruct",
-                messages=[{
-                    "role": "user",
-                    "content": [
-                        {"type": "image_url", "image_url": {"url": f"data:{image_type};base64,{image_b64}"}},
-                        {"type": "text", "text": "Describe this YouTube trading video thumbnail briefly: what text, charts, indicators, or visuals are shown? Keep it under 80 words."}
-                    ]
-                }],
+            vr = client.chat.completions.create(
+                model=vision_id,
+                messages=[{"role": "user", "content": [
+                    {"type": "image_url",
+                     "image_url": {"url": f"data:{image_type};base64,{image_b64}"}},
+                    {"type": "text",
+                     "text": "Describe this YouTube trading thumbnail briefly: text, charts, indicators shown. Under 80 words."},
+                ]}],
                 max_tokens=150,
             )
-            thumb_desc = vision_resp.choices[0].message.content.strip()
+            thumb_desc = vr.choices[0].message.content.strip()
         except Exception:
-            thumb_desc = ""
+            pass
 
-    # Main generation call
+    full_prompt = prompt + (f"\n\nThumbnail analysis: {thumb_desc}" if thumb_desc else "")
+
     resp = client.chat.completions.create(
-        model=model,
-        messages=[{"role": "user", "content": prompt + (f"\n\nThumbnail analysis: {thumb_desc}" if thumb_desc else "")}],
+        model=model_id,
+        messages=[{"role": "user", "content": full_prompt}],
         max_tokens=2500,
         temperature=0.75,
     )
     raw = resp.choices[0].message.content.strip()
 
-    # Strip markdown code fences if model added them
-    if raw.startswith("```"):
-        raw = raw.split("```")[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-    raw = raw.strip()
+    # Strip markdown fences robustly
+    if "```" in raw:
+        for part in raw.split("```"):
+            part = part.strip().lstrip("json").strip()
+            if part.startswith("{"):
+                raw = part
+                break
 
-    data = json.loads(raw)
-    return data, thumb_desc
+    # Extract JSON boundaries
+    s, e = raw.find("{"), raw.rfind("}") + 1
+    if s != -1 and e > s:
+        raw = raw[s:e]
+
+    return json.loads(raw), thumb_desc
 
 
 # ════════════════════════════════════════════════
@@ -388,173 +353,149 @@ with col_out:
     if generate:
         if not topic.strip():
             st.error("Please enter a video topic first.")
-        elif not groq_key:
-            st.error("Please enter your Groq API key in the sidebar.")
+        elif not or_key:
+            st.error("Please add your OpenRouter API key in the sidebar. It's free at openrouter.ai")
         else:
-            with st.spinner("🤖 Generating viral content with AI..."):
+            with st.spinner("🤖 Generating via OpenRouter..."):
                 try:
-                    # Encode image if uploaded
-                    img_b64 = None
-                    img_type = "image/jpeg"
-                    if thumb_file:
-                        img_b64 = encode_image(thumb_file)
-                        img_type = thumb_file.type or "image/jpeg"
+                    img_b64  = encode_image(thumb_file)
+                    img_type = (thumb_file.type or "image/jpeg") if thumb_file else "image/jpeg"
 
                     prompt = build_prompt(
                         topic, niche, language, audience, content_type, platforms,
-                        key_levels if 'key_levels' in dir() else "",
-                        market_view if 'market_view' in dir() else "Neutral",
-                        special_notes if 'special_notes' in dir() else "",
-                        brand_name, brand_url, brand_handle
+                        key_levels, market_view, special_notes,
+                        brand_name, brand_url, brand_handle,
                     )
 
-                    result, thumb_desc = call_groq(prompt, groq_key, model_choice, img_b64, img_type)
+                    result, thumb_desc = call_openrouter(
+                        prompt, or_key, model_id, vision_id, img_b64, img_type
+                    )
 
-                    # Save to session history
                     st.session_state.history.append({
                         "timestamp": datetime.now().strftime("%d %b %Y %H:%M"),
                         "topic": topic,
-                        "result": result
+                        "result": result,
                     })
 
-                    # ── Thumbnail AI description ──
                     if thumb_desc:
                         st.info(f"🖼️ **Thumbnail detected:** {thumb_desc}")
 
-                    # ── TITLES ────────────────────
+                    # Titles
                     st.markdown('<div class="out-label">🏆 Viral title options</div>', unsafe_allow_html=True)
                     titles = result.get("titles", [])
                     for t in titles:
-                        score = t.get("viral_score", "—")
+                        score = t.get("viral_score", 0)
                         color = "#5DCAA5" if score >= 90 else "#EF9F27" if score >= 80 else "#E24B4A"
-                        st.markdown(f"""
-                        <div class="title-card">
-                            <span style="font-size:13px; color:#ddd; flex:1">{t['title']}</span>
-                            <span class="score-badge" style="border-color:{color}; color:{color}">{score}% viral</span>
-                        </div>
-                        """, unsafe_allow_html=True)
-                        with st.expander(f"💡 Why this works", expanded=False):
+                        st.markdown(f"""<div class="title-card">
+                            <span style="font-size:13px;color:#ddd;flex:1">{t['title']}</span>
+                            <span class="score-badge" style="border-color:{color};color:{color}">{score}% viral</span>
+                        </div>""", unsafe_allow_html=True)
+                        with st.expander("💡 Why this works", expanded=False):
                             st.caption(t.get("reason", ""))
 
-                    # ── TAGS ──────────────────────
-                    st.markdown('<div class="out-label" style="margin-top:1rem">🏷️ SEO Tags (high volume first)</div>', unsafe_allow_html=True)
+                    # Tags
+                    st.markdown('<div class="out-label" style="margin-top:1rem">🏷️ SEO tags (high volume first)</div>', unsafe_allow_html=True)
                     tags = result.get("tags", [])
-                    tag_html = ""
-                    for tg in tags:
-                        vol = tg.get("volume", "medium")
-                        cls = "tag-high" if vol == "high" else "tag-med" if vol == "medium" else "tag-low"
-                        tag_html += f'<span class="tag-pill {cls}">{tg["tag"]}</span>'
+                    tag_html = "".join([
+                        f'<span class="tag-pill {"tag-high" if tg.get("volume")=="high" else "tag-med" if tg.get("volume")=="medium" else "tag-low"}">{tg["tag"]}</span>'
+                        for tg in tags
+                    ])
                     st.markdown(f'<div style="line-height:2">{tag_html}</div>', unsafe_allow_html=True)
 
                     tags_string = result.get("tags_string", ", ".join([t["tag"] for t in tags]))
-                    char_len = len(tags_string)
-                    char_class = "char-ok" if char_len <= 450 else "char-warn" if char_len <= 500 else "char-over"
-                    st.markdown(f'<div class="char-count {char_class}">{char_len}/500 characters</div>', unsafe_allow_html=True)
+                    clen = len(tags_string)
+                    ccls = "char-ok" if clen <= 450 else "char-warn" if clen <= 500 else "char-over"
+                    st.markdown(f'<div class="char-count {ccls}">{clen}/500 characters</div>', unsafe_allow_html=True)
                     st.text_area("📋 Copy-ready tags string", value=tags_string, height=80, key="tags_area")
 
-                    # ── DESCRIPTION ───────────────
+                    # Description
                     st.markdown('<div class="out-label" style="margin-top:1rem">📝 YouTube description</div>', unsafe_allow_html=True)
                     desc = result.get("description", "")
                     st.text_area("Full description", value=desc, height=250, key="desc_area")
                     st.caption(f"{len(desc)} characters")
 
-                    # ── SHORT DESCRIPTION ─────────
+                    # Short description
                     short_desc = result.get("short_description", "")
                     if short_desc:
                         st.markdown('<div class="out-label" style="margin-top:0.5rem">📱 Short description (Instagram / Twitter)</div>', unsafe_allow_html=True)
-                        st.text_area("Short description", value=short_desc, height=80, key="short_desc_area")
+                        st.text_area("Short description", value=short_desc, height=80, key="short_area")
 
-                    # ── HASHTAGS ──────────────────
+                    # Hashtags
                     st.markdown('<div class="out-label" style="margin-top:1rem">🔖 Hashtags</div>', unsafe_allow_html=True)
-                    hashtags = result.get("hashtags", [])
+                    hashtags    = result.get("hashtags", [])
                     hashtag_str = " ".join(hashtags)
-                    ht_html = "".join([f'<span class="tag-pill tag-high">{h}</span>' for h in hashtags])
-                    st.markdown(f'<div style="line-height:2">{ht_html}</div>', unsafe_allow_html=True)
+                    st.markdown(''.join([f'<span class="tag-pill tag-high">{h}</span>' for h in hashtags]), unsafe_allow_html=True)
                     st.text_area("Copy hashtags", value=hashtag_str, height=60, key="hashtags_area")
 
-                    # ── HOOK IDEAS ────────────────
+                    # Hooks
                     hooks = result.get("hook_ideas", [])
                     if hooks:
-                        st.markdown('<div class="out-label" style="margin-top:1rem">🎣 Video opening hook ideas</div>', unsafe_allow_html=True)
+                        st.markdown('<div class="out-label" style="margin-top:1rem">🎣 Video opening hooks</div>', unsafe_allow_html=True)
                         for i, h in enumerate(hooks, 1):
                             st.markdown(f"**{i}.** {h}")
 
-                    # ── THUMBNAIL TEXT ────────────
+                    # Thumbnail text
                     thumb_texts = result.get("thumbnail_text_suggestions", [])
                     if thumb_texts:
-                        st.markdown('<div class="out-label" style="margin-top:1rem">🖼️ Thumbnail text overlay suggestions</div>', unsafe_allow_html=True)
+                        st.markdown('<div class="out-label" style="margin-top:1rem">🖼️ Thumbnail text overlays</div>', unsafe_allow_html=True)
                         for tt in thumb_texts:
                             st.markdown(f"• `{tt}`")
 
-                    # ── EXPORT ────────────────────
+                    # Export
                     st.markdown("---")
-                    export_text = f"""=== NYZTrade Viral Content Export ===
-Generated: {datetime.now().strftime('%d %b %Y %H:%M')}
-Topic: {topic}
-Niche: {niche}
-Language: {language}
-
---- TITLES ---
-{chr(10).join([f"{i+1}. {t['title']} ({t.get('viral_score','')}% viral)" for i, t in enumerate(titles)])}
-
---- TAGS (YouTube - copy below) ---
-{tags_string}
-
---- DESCRIPTION ---
-{desc}
-
---- HASHTAGS ---
-{hashtag_str}
-
---- HOOK IDEAS ---
-{chr(10).join([f"{i+1}. {h}" for i, h in enumerate(hooks)])}
-
---- THUMBNAIL TEXT SUGGESTIONS ---
-{chr(10).join([f"• {tt}" for tt in thumb_texts])}
-"""
+                    export_text = (
+                        f"=== NYZTrade Viral Content Export ===\n"
+                        f"Generated : {datetime.now().strftime('%d %b %Y %H:%M')}\n"
+                        f"Topic     : {topic}\n"
+                        f"Niche     : {niche}\n"
+                        f"Language  : {language}\n"
+                        f"Model     : {model_label}\n\n"
+                        f"--- TITLES ---\n"
+                        + "\n".join([f"{i+1}. {t['title']} ({t.get('viral_score','')}% viral)" for i,t in enumerate(titles)])
+                        + f"\n\n--- TAGS (max 500 chars) ---\n{tags_string}"
+                        + f"\n\n--- DESCRIPTION ---\n{desc}"
+                        + f"\n\n--- HASHTAGS ---\n{hashtag_str}"
+                        + f"\n\n--- HOOKS ---\n" + "\n".join([f"{i+1}. {h}" for i,h in enumerate(hooks)])
+                        + f"\n\n--- THUMBNAIL TEXT ---\n" + "\n".join([f"• {tt}" for tt in thumb_texts])
+                    )
                     st.download_button(
                         "⬇️ Download as .txt",
                         data=export_text,
-                        file_name=f"nyztrade_content_{datetime.now().strftime('%Y%m%d_%H%M')}.txt",
+                        file_name=f"nyztrade_{datetime.now().strftime('%Y%m%d_%H%M')}.txt",
                         mime="text/plain",
                         use_container_width=True,
                     )
 
                 except json.JSONDecodeError as e:
-                    st.error(f"AI returned invalid JSON. Try again. ({e})")
+                    st.error(f"AI returned invalid JSON — try a different model or regenerate. ({e})")
                 except Exception as e:
                     st.error(f"Error: {e}")
 
     else:
-        # Placeholder state
         st.markdown("""
-        <div style="text-align:center; padding:3rem 1rem; color:#666">
-            <div style="font-size:3rem; margin-bottom:1rem">✨</div>
-            <div style="font-size:1rem; margin-bottom:0.5rem; color:#aaa">Fill in your content details</div>
-            <div style="font-size:0.85rem; color:#666">and click <strong>Generate viral content</strong> to get<br>
-            AI-powered titles, tags, and descriptions</div>
-        </div>
-        """, unsafe_allow_html=True)
+        <div style="text-align:center;padding:3rem 1rem">
+            <div style="font-size:3rem;margin-bottom:1rem">✨</div>
+            <div style="font-size:1rem;margin-bottom:0.5rem;color:#aaa">Fill in your content details</div>
+            <div style="font-size:0.85rem;color:#666">and click <strong>Generate viral content</strong></div>
+        </div>""", unsafe_allow_html=True)
 
-        # Show history if any
         if st.session_state.history:
             st.markdown("#### 🕐 Recent generations")
             for item in reversed(st.session_state.history[-5:]):
                 with st.expander(f"📌 {item['topic']} — {item['timestamp']}"):
-                    titles = item['result'].get('titles', [])
-                    if titles:
-                        st.markdown(f"**Top title:** {titles[0]['title']}")
-                    tags_str = item['result'].get('tags_string', '')
-                    if tags_str:
-                        st.text_area("Tags", value=tags_str, height=60, key=f"hist_{item['timestamp']}")
-
+                    tl = item['result'].get('titles', [])
+                    if tl:
+                        st.markdown(f"**Top title:** {tl[0]['title']}")
+                    ts = item['result'].get('tags_string', '')
+                    if ts:
+                        st.text_area("Tags", value=ts, height=60, key=f"h_{item['timestamp']}")
 
 # ── Footer ────────────────────────────────────────────────────────────────────
 st.markdown("---")
 st.markdown(
-    "<div style='text-align:center; font-size:12px; color:#555'>"
-    "NYZTrade Analytics Pvt. Ltd. · Powered by Groq + Llama 3.3 · "
+    "<div style='text-align:center;font-size:12px;color:#555'>"
+    "NYZTrade Analytics Pvt. Ltd. · Powered by OpenRouter (free models) · "
     "<a href='https://nyztrade.in' style='color:#378ADD'>nyztrade.in</a>"
     "</div>",
-    unsafe_allow_html=True
+    unsafe_allow_html=True,
 )
